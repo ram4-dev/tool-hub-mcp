@@ -1,5 +1,7 @@
 import { initDb, getToolhubDir } from '../telemetry/init.js';
 
+const MIN_SAMPLES_FOR_PERCENTILE = 5;
+
 function parseSince(since: string | undefined): string {
   // Support "7d", "24h", "30m". Defaults to 7d.
   const s = since ?? '7d';
@@ -54,9 +56,6 @@ export async function runStats(opts: StatsOptions = {}): Promise<void> {
       latencies.push(r.latency_ms);
     }
     latencies.sort((a, b) => a - b);
-    const p50 = percentile(latencies, 50);
-    const p95 = percentile(latencies, 95);
-    const p99 = percentile(latencies, 99);
 
     const topTools = Array.from(byTool.entries())
       .sort((a, b) => b[1] - a[1])
@@ -69,8 +68,23 @@ export async function runStats(opts: StatsOptions = {}): Promise<void> {
     for (const [n, c] of topTools) console.log(`  ${c.toString().padStart(4)}  ${n}`);
     console.log('\nTop MCPs:');
     for (const [n, c] of topMcps) console.log(`  ${c.toString().padStart(4)}  ${n}`);
+
     console.log('\nLatency (ms):');
-    console.log(`  p50=${p50}  p95=${p95}  p99=${p99}`);
+    const count = latencies.length;
+    const min = latencies[0];
+    const max = latencies[count - 1];
+    const avg = Math.round(latencies.reduce((s, v) => s + v, 0) / count);
+    if (count < MIN_SAMPLES_FOR_PERCENTILE) {
+      console.log('  (sample size too small — percentiles approximate)');
+      console.log(`  count=${count}  min=${min}  max=${max}  avg=${avg}`);
+    } else {
+      const p50 = percentile(latencies, 50);
+      const p95 = percentile(latencies, 95);
+      const p99 = percentile(latencies, 99);
+      console.log(`  count=${count}  min=${min}  max=${max}  avg=${avg}`);
+      console.log(`  p50=${p50}  p95=${p95}  p99=${p99}`);
+    }
+
     console.log(`\nTokens saved (estimated sum): ${tokensSaved}`);
   } finally {
     db.close();

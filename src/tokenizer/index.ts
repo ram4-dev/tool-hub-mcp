@@ -24,3 +24,8 @@ export function approximateTokens(text: string): number {
   // ~4 chars per token is the common rule of thumb.
   return Math.ceil(text.length / 4);
 }
+
+/** Dispose the singleton encoder so it can be garbage collected on shutdown. */
+export function disposeTokenizer(): void {
+  encoder = null;
+}

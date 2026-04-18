@@ -4,8 +4,20 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from '@modelcontextprotocol/sdk/types.js';
+import { z } from 'zod';
 import type { Router } from '../router/index.js';
-import { RouterError } from '../router/index.js';
+import { RouterError, TOOL_ID_RE } from '../router/index.js';
+
+const CallEnvelopeSchema = z.object({
+  name: z.string(),
+  arguments: z.record(z.unknown()).optional(),
+});
+const ListCapabilitiesParamsSchema = z.object({}).passthrough();
+const GetSchemaParamsSchema = z.object({ name: z.string() });
+const InvokeParamsSchema = z.object({
+  name: z.string(),
+  arguments: z.record(z.unknown()).optional(),
+});
 
 /**
  * ServerFacade exposes exactly 3 tools to the agent:
@@ -71,24 +83,37 @@ export class ServerFacade {
     }));
 
     this.server.setRequestHandler(CallToolRequestSchema, async (req) => {
-      const { name, arguments: args } = req.params as {
-        name: string;
-        arguments?: Record<string, unknown>;
-      };
+      const envelopeParsed = CallEnvelopeSchema.safeParse(req.params);
+      if (!envelopeParsed.success) {
+        return errorContent('INVALID_PARAMS', envelopeParsed.error.message);
+      }
+      const { name, arguments: rawArgs = {} } = envelopeParsed.data;
 
       try {
         switch (name) {
-          case 'list_capabilities':
+          case 'list_capabilities': {
+            const parsed = ListCapabilitiesParamsSchema.safeParse(rawArgs);
+            if (!parsed.success) {
+              return errorContent('INVALID_PARAMS', parsed.error.message);
+            }
             return this.handleListCapabilities();
-          case 'get_schema':
-            return this.handleGetSchema((args?.name as string) ?? '');
-          case 'invoke':
-            return await this.handleInvoke(
-              (args?.name as string) ?? '',
-              (args?.arguments as Record<string, unknown>) ?? {},
-            );
+          }
+          case 'get_schema': {
+            const parsed = GetSchemaParamsSchema.safeParse(rawArgs);
+            if (!parsed.success) {
+              return errorContent('INVALID_PARAMS', parsed.error.message);
+            }
+            return this.handleGetSchema(parsed.data.name);
+          }
+          case 'invoke': {
+            const parsed = InvokeParamsSchema.safeParse(rawArgs);
+            if (!parsed.success) {
+              return errorContent('INVALID_PARAMS', parsed.error.message);
+            }
+            return await this.handleInvoke(parsed.data.name, parsed.data.arguments ?? {});
+          }
           default:
-            return errorContent('TOOL_NOT_FOUND', `Unknown facade tool: ${name}`);
+            return errorContent('TOOL_NOT_FOUND', `Unknown facade tool: ${String(name)}`);
         }
       } catch (err) {
         if (err instanceof RouterError) {
@@ -108,6 +133,9 @@ export class ServerFacade {
   }
 
   private handleGetSchema(toolId: string) {
+    if (!TOOL_ID_RE.test(toolId)) {
+      return errorContent('TOOL_NOT_FOUND', `tool ${toolId} not found`);
+    }
     const entry = this.router.getCatalog().get(toolId);
     if (!entry || !entry.enabled) {
       return errorContent('TOOL_NOT_FOUND', `tool ${toolId} not found`);

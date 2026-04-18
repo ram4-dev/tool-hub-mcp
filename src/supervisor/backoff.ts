@@ -7,5 +7,3 @@ export function nextBackoffMs(attempt: number): number | null {
   if (attempt < 0 || attempt >= BACKOFF_STEPS_MS.length) return null;
   return BACKOFF_STEPS_MS[attempt];
 }
-
-export const MAX_RESTART_ATTEMPTS = BACKOFF_STEPS_MS.length;

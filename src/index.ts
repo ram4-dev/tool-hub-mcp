@@ -1,4 +1,7 @@
 import type Database from 'better-sqlite3';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { initDb, getToolhubDir } from './telemetry/init.js';
 import { Catalog } from './catalog/index.js';
 import { Supervisor } from './supervisor/index.js';
@@ -6,6 +9,7 @@ import { Router } from './router/index.js';
 import { TelemetryWriter } from './telemetry/writer.js';
 import { ServerFacade } from './server/facade.js';
 import { readClaudeCodeConfig } from './config/claude-code.js';
+import { disposeTokenizer } from './tokenizer/index.js';
 import type { DiscoveredMcp } from './config/types.js';
 
 export interface ToolhubRuntime {
@@ -23,6 +27,48 @@ export interface BootstrapOptions {
   toolhubDir?: string;
   mcps?: DiscoveredMcp[]; // override for tests
   inMemoryDb?: boolean;
+  /** Override log directory (primarily for tests). */
+  logDir?: string;
+}
+
+const LOG_ROTATE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+interface ChildLogStream {
+  path: string;
+  stream: fs.WriteStream;
+  bytes: number;
+}
+
+function openLogStream(logPath: string): ChildLogStream {
+  let bytes = 0;
+  try {
+    bytes = fs.statSync(logPath).size;
+  } catch {
+    bytes = 0;
+  }
+  const stream = fs.createWriteStream(logPath, { flags: 'a' });
+  return { path: logPath, stream, bytes };
+}
+
+function rotateIfNeeded(entry: ChildLogStream, incoming: number): ChildLogStream {
+  if (entry.bytes + incoming < LOG_ROTATE_BYTES) return entry;
+  try {
+    entry.stream.end();
+  } catch {
+    // ignore
+  }
+  const rotated = `${entry.path}.1`;
+  try {
+    if (fs.existsSync(rotated)) fs.unlinkSync(rotated);
+  } catch {
+    // ignore
+  }
+  try {
+    fs.renameSync(entry.path, rotated);
+  } catch {
+    // ignore — if rename fails we just reopen the same file
+  }
+  return openLogStream(entry.path);
 }
 
 export async function bootstrap(opts: BootstrapOptions = {}): Promise<ToolhubRuntime> {
@@ -35,10 +81,28 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<ToolhubRun
     onWarn: (m) => console.error(`[config] ${m}`),
   });
 
+  const logDir = opts.logDir ?? path.join(os.homedir(), '.toolhub', 'logs');
+  fs.mkdirSync(logDir, { recursive: true });
+
+  const streams = new Map<string, ChildLogStream>();
+  for (const m of mcps) {
+    const logPath = path.join(logDir, `${m.name}.log`);
+    streams.set(m.name, openLogStream(logPath));
+  }
+
   const supervisor = new Supervisor({
     db,
     catalog,
     mcps,
+    onChildStderr: (name, line) => {
+      const existing = streams.get(name);
+      if (!existing) return;
+      const payload = line + '\n';
+      const rotated = rotateIfNeeded(existing, Buffer.byteLength(payload));
+      if (rotated !== existing) streams.set(name, rotated);
+      rotated.stream.write(payload);
+      rotated.bytes += Buffer.byteLength(payload);
+    },
   });
   await supervisor.startAll();
 
@@ -50,6 +114,15 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<ToolhubRun
     await facade.close();
     await supervisor.shutdown();
     await telemetry.stop();
+    for (const entry of streams.values()) {
+      try {
+        entry.stream.end();
+      } catch {
+        // ignore
+      }
+    }
+    streams.clear();
+    disposeTokenizer();
     try {
       db.close();
     } catch {

@@ -10,8 +10,11 @@
   },
   "stats": {
     "total": 18,
-    "done": 0,
-    "by_layer": { "1": 15, "3": 3 }
+    "done": 19,
+    "by_layer": {
+      "1": 15,
+      "3": 3
+    }
   },
   "execution_strategy": "batched",
   "tasks": [
@@ -19,112 +22,161 @@
       "id": "TASK-001",
       "title": "Bootstrap del proyecto Node/TS",
       "description": "Inicializar package.json, tsconfig.json, vitest.config.ts, ESLint + Prettier, estructura de carpetas (src/, bin/, test/), .gitignore. Declarar deps: @modelcontextprotocol/sdk, better-sqlite3, commander, js-tiktoken, zod.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Low",
       "depends_on": [],
-      "files": ["package.json", "tsconfig.json", "vitest.config.ts", ".eslintrc.json", ".gitignore"],
+      "files": [
+        "package.json",
+        "tsconfig.json",
+        "vitest.config.ts",
+        ".eslintrc.json",
+        ".gitignore"
+      ],
       "acceptance_criteria": [
         "AC-1: npm install corre sin errores",
         "AC-2: npx tsc --noEmit pasa",
         "AC-3: npx vitest run con 0 tests corre OK",
         "GATE: npm run build termina sin errores"
       ],
-      "references": ["DD-1", "§13"]
+      "references": [
+        "DD-1",
+        "§13"
+      ]
     },
     {
       "id": "TASK-002",
       "title": "Schema SQLite y bootstrap del state.db",
       "description": "Crear src/telemetry/schema.sql con las 4 tablas (tools, invocations, sessions, mcp_status). Función initDb() que abre ~/.toolhub/state.db con better-sqlite3 en WAL mode y aplica schema si no existe.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Low",
-      "depends_on": ["TASK-001"],
-      "files": ["src/telemetry/schema.sql", "src/telemetry/init.ts"],
+      "depends_on": [
+        "TASK-001"
+      ],
+      "files": [
+        "src/telemetry/schema.sql",
+        "src/telemetry/init.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: initDb() crea ~/.toolhub/state.db si no existe",
         "AC-2: Las 4 tablas y los índices se crean según spec §5",
         "AC-3: PRAGMA journal_mode=WAL queda activo",
         "GATE: Unit test verifica idempotencia (correr 2 veces no rompe)"
       ],
-      "references": ["§5"]
+      "references": [
+        "§5"
+      ]
     },
     {
       "id": "TASK-003",
       "title": "Types + ConfigReader de Claude Code",
       "description": "Definir types (McpServerConfig, ToolhubConfig, etc.) con zod. Implementar ConfigReader que lee ~/.claude.json + ~/.claude/plugins/**/.mcp.json y devuelve la lista de MCPs con env vars expandidas.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-001"],
-      "files": ["src/config/types.ts", "src/config/claude-code.ts"],
+      "depends_on": [
+        "TASK-001"
+      ],
+      "files": [
+        "src/config/types.ts",
+        "src/config/claude-code.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: Parsea fixtures reales de ~/.claude.json sin error",
         "AC-2: Expande variables ${ENV_VAR} en args y env",
         "AC-3: Valida schema con zod — entradas inválidas se ignoran con warning",
         "GATE: Snapshot test contra test/fixtures/claude.json"
       ],
-      "references": ["§3 ConfigReader"]
+      "references": [
+        "§3 ConfigReader"
+      ]
     },
     {
       "id": "TASK-004",
       "title": "Tokenizer wrapper",
       "description": "Wrapper sobre js-tiktoken con encoding cl100k_base. Función countTokens(text: string): number usada para estimar schema_tokens y tokens_saved_estimate.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Low",
-      "depends_on": ["TASK-001"],
-      "files": ["src/tokenizer/index.ts"],
+      "depends_on": [
+        "TASK-001"
+      ],
+      "files": [
+        "src/tokenizer/index.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: countTokens('hola mundo') retorna un número >0",
         "AC-2: Singleton del encoder (no se recarga por llamada)",
         "GATE: Unit tests con 3 strings de referencia"
       ],
-      "references": ["DD-8"]
+      "references": [
+        "DD-8"
+      ]
     },
     {
       "id": "TASK-005",
       "title": "MCPClient adapter",
       "description": "Cliente MCP que se conecta a UN subproceso hijo por stdio. Implementa initialize, listTools, callTool con el SDK oficial. Maneja timeout configurable (default 30s).",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-001"],
-      "files": ["src/client/mcp-client.ts"],
+      "depends_on": [
+        "TASK-001"
+      ],
+      "files": [
+        "src/client/mcp-client.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: Contra un MCP mock local, listTools() retorna tools con schemas",
         "AC-2: callTool(name, args) retorna el resultado del hijo sin transformar",
         "AC-3: Timeout dispara error tipo TIMEOUT",
         "GATE: Tests de integración con mock MCP (test/mocks/mcp-mock-server.ts)"
       ],
-      "references": ["§3 MCPClient"]
+      "references": [
+        "§3 MCPClient"
+      ]
     },
     {
       "id": "TASK-006",
       "title": "Catalog (in-memory + SQLite)",
       "description": "Estructura que mantiene Map<tool_id, ToolEntry> en memoria y sincroniza con tabla tools en SQLite. Expone add, get, list (filtrable por enabled), setEnabled, removeByMcp.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-002", "TASK-004"],
-      "files": ["src/catalog/index.ts"],
+      "depends_on": [
+        "TASK-002",
+        "TASK-004"
+      ],
+      "files": [
+        "src/catalog/index.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: add() persiste en SQLite y actualiza map",
         "AC-2: Al arrancar, carga catálogo existente desde SQLite",
         "AC-3: setEnabled/removeByMcp propagan cambios a SQLite",
         "GATE: Unit tests con SQLite en /tmp"
       ],
-      "references": ["§3 Catalog"]
+      "references": [
+        "§3 Catalog"
+      ]
     },
     {
       "id": "TASK-007",
       "title": "Supervisor de MCPs hijos",
       "description": "Lanza cada MCP hijo como subproceso, ejecuta health-check inicial (listTools dentro de 10s), reinicia con backoff 1s/5s/30s. Tras 3 fallos consecutivos marca mcp_status como crashed y remueve tools del catálogo.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "High",
-      "depends_on": ["TASK-003", "TASK-005", "TASK-006"],
-      "files": ["src/supervisor/index.ts", "src/supervisor/backoff.ts"],
+      "depends_on": [
+        "TASK-003",
+        "TASK-005",
+        "TASK-006"
+      ],
+      "files": [
+        "src/supervisor/index.ts",
+        "src/supervisor/backoff.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: Arranca N MCPs en paralelo y todos quedan running",
         "AC-2: Si un hijo muere, supervisor detecta exit y reinicia",
@@ -132,34 +184,50 @@
         "AC-4: mcp_status en SQLite refleja el estado real",
         "GATE: Integration test mata un hijo mock y verifica recovery"
       ],
-      "references": ["US-5", "DD-6"]
+      "references": [
+        "US-5",
+        "DD-6"
+      ]
     },
     {
       "id": "TASK-008",
       "title": "Telemetry writer (cola async)",
       "description": "Writer que recibe InvocationRecord vía una cola bounded (size=1000), batchea escrituras en SQLite cada 100ms. Si la cola se llena, dropea con warning (nunca bloquea Router).",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-002"],
-      "files": ["src/telemetry/writer.ts"],
+      "depends_on": [
+        "TASK-002"
+      ],
+      "files": [
+        "src/telemetry/writer.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: enqueue() retorna sync sin bloquear",
         "AC-2: 1000 invocations se persisten correctamente (<1s)",
         "AC-3: Flush graceful al shutdown",
         "GATE: Unit test de stress con 10k invocations"
       ],
-      "references": ["§3 Telemetry", "§4 Process Model"]
+      "references": [
+        "§3 Telemetry",
+        "§4 Process Model"
+      ]
     },
     {
       "id": "TASK-009",
       "title": "Router",
       "description": "Recibe invoke(tool_id, args), busca en Catalog, delega a MCPClient correspondiente, mide latencia, construye InvocationRecord y lo encola en Telemetry. Devuelve resultado al caller. Valida tool_id con regex y arguments (tamaño máx 1MB).",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-006", "TASK-005", "TASK-008"],
-      "files": ["src/router/index.ts"],
+      "depends_on": [
+        "TASK-006",
+        "TASK-005",
+        "TASK-008"
+      ],
+      "files": [
+        "src/router/index.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: Tool enabled se invoca correctamente",
         "AC-2: Tool disabled retorna TOOL_NOT_FOUND",
@@ -167,68 +235,98 @@
         "AC-4: Cada invocación genera una fila en invocations",
         "GATE: Validación de tool_id regex ^[a-z0-9_-]+\\.[a-z0-9_-]+$"
       ],
-      "references": ["§3 Router", "§8 Security"]
+      "references": [
+        "§3 Router",
+        "§8 Security"
+      ]
     },
     {
       "id": "TASK-010",
       "title": "ServerFacade (MCP server)",
       "description": "Expone list_capabilities, get_schema, invoke como tools MCP usando @modelcontextprotocol/sdk. Namespacing de tools hijas como mcp_name.tool_name.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-009"],
-      "files": ["src/server/facade.ts"],
+      "depends_on": [
+        "TASK-009"
+      ],
+      "files": [
+        "src/server/facade.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: list_capabilities devuelve [{name, short_description}] de todas las tools enabled",
         "AC-2: get_schema(unknown) retorna error TOOL_NOT_FOUND",
         "AC-3: invoke delega en Router y retorna resultado del hijo",
         "GATE: Integration test con un cliente MCP conectado vía stdio"
       ],
-      "references": ["§6 Tools Exposed", "DD-3"]
+      "references": [
+        "§6 Tools Exposed",
+        "DD-3"
+      ]
     },
     {
       "id": "TASK-011",
       "title": "Entry point MCP server + CLI base",
       "description": "Crear bin/toolhub-mcp-server.js (arranca ConfigReader → Supervisor → ServerFacade sobre stdio) y bin/toolhub.js (CLI con commander). Wiring de shutdown graceful (SIGTERM, SIGINT).",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-010"],
-      "files": ["bin/toolhub.js", "bin/toolhub-mcp-server.js", "src/index.ts"],
+      "depends_on": [
+        "TASK-010"
+      ],
+      "files": [
+        "bin/toolhub.js",
+        "bin/toolhub-mcp-server.js",
+        "src/index.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: `node bin/toolhub-mcp-server.js` arranca, se conecta a stdio y expone los 3 tools",
         "AC-2: SIGTERM dispara shutdown limpio (flush telemetry, kill hijos)",
         "AC-3: `toolhub --help` muestra los subcomandos",
         "GATE: Smoke test bash en CI"
       ],
-      "references": ["§11 Deployment"]
+      "references": [
+        "§11 Deployment"
+      ]
     },
     {
       "id": "TASK-012",
       "title": "CLI: init + status",
       "description": "`toolhub init`: lee ~/.claude.json, muestra resumen (N MCPs detectados, tokens estimados), genera snippet sugerido para ~/.claude.json. `toolhub status [--json]`: estado del proxy, MCPs hijos activos, warnings.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-011"],
-      "files": ["src/cli/init.ts", "src/cli/status.ts"],
+      "depends_on": [
+        "TASK-011"
+      ],
+      "files": [
+        "src/cli/init.ts",
+        "src/cli/status.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: init muestra N MCPs + tokens estimados",
         "AC-2: init NO escribe ~/.claude.json (solo sugiere)",
         "AC-3: status muestra PID, uptime, children state, queue depth",
         "GATE: Tests con fixture de claude.json"
       ],
-      "references": ["US-1", "US-4"]
+      "references": [
+        "US-1",
+        "US-4"
+      ]
     },
     {
       "id": "TASK-013",
       "title": "CLI: migrate (dry-run, apply, revert)",
       "description": "`migrate --dry-run`: imprime diff del ~/.claude.json. `migrate --apply`: aplica tras confirmación, con backup .toolhub-backup-<ts>. `migrate --revert`: restaura último backup. Validación JSON previa a cualquier escritura.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-011"],
-      "files": ["src/cli/migrate.ts"],
+      "depends_on": [
+        "TASK-011"
+      ],
+      "files": [
+        "src/cli/migrate.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: dry-run imprime diff legible sin escribir nada",
         "AC-2: apply genera backup timestamped y valida JSON final",
@@ -236,67 +334,99 @@
         "AC-4: Write atómico via temp file + rename (flag wx)",
         "GATE: Tests con fixture read/write en /tmp"
       ],
-      "references": ["US-6", "§8.4"]
+      "references": [
+        "US-6",
+        "§8.4"
+      ]
     },
     {
       "id": "TASK-014",
       "title": "CLI: stats + unused + enable/disable",
       "description": "`stats [--since 7d]`: top tools, top MCPs, tokens ahorrados (estimado), p50/p95/p99 latencias. `unused [--since 7d]`: tools sin invocaciones en el período. `enable/disable <tool_id>`: actualiza Catalog + SQLite.",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Medium",
-      "depends_on": ["TASK-011"],
-      "files": ["src/cli/stats.ts", "src/cli/unused.ts", "src/cli/toggle.ts"],
+      "depends_on": [
+        "TASK-011"
+      ],
+      "files": [
+        "src/cli/stats.ts",
+        "src/cli/unused.ts",
+        "src/cli/toggle.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: stats devuelve output tabular legible",
         "AC-2: unused identifica correctamente tools sin registros",
         "AC-3: enable/disable persiste y Router respeta el flag",
         "GATE: Tests con SQLite pre-poblada"
       ],
-      "references": ["US-4"]
+      "references": [
+        "US-4"
+      ]
     },
     {
       "id": "TASK-015",
       "title": "Integration tests end-to-end + CI",
       "description": "Test suite que arranca toolhub contra 2-3 MCPs mock in-process, invoca tools, mata uno para validar recovery, inspecciona SQLite. GitHub Actions workflow con matriz (macOS, Linux, Windows × Node 20, 22).",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "High",
-      "depends_on": ["TASK-012", "TASK-013", "TASK-014"],
-      "files": ["test/integration/*.test.ts", "test/mocks/mcp-mock-server.ts", ".github/workflows/ci.yml"],
+      "depends_on": [
+        "TASK-012",
+        "TASK-013",
+        "TASK-014"
+      ],
+      "files": [
+        "test/integration/*.test.ts",
+        "test/mocks/mcp-mock-server.ts",
+        ".github/workflows/ci.yml"
+      ],
       "acceptance_criteria": [
         "AC-1: Test e2e cubre el flujo list → get_schema → invoke",
         "AC-2: Test de recovery: kill un hijo → tools del resto siguen funcionando",
         "AC-3: CI corre en la matriz completa",
         "GATE: GREEN en GitHub Actions"
       ],
-      "references": ["§10 Testing"]
+      "references": [
+        "§10 Testing"
+      ]
     },
     {
       "id": "TASK-016",
       "title": "README, LICENSE, docs de instalación",
       "description": "README con quick start (npx toolhub init), comandos CLI, FAQ. LICENSE (MIT). docs/ con metodología de estimación de tokens ahorrados y política de telemetría (metadata-only).",
-      "status": "pending",
+      "status": "done",
       "layer": 1,
       "complexity": "Low",
-      "depends_on": ["TASK-015"],
-      "files": ["README.md", "LICENSE", "docs/telemetry.md", "docs/token-estimation.md"],
+      "depends_on": [
+        "TASK-015"
+      ],
+      "files": [
+        "README.md",
+        "LICENSE",
+        "docs/telemetry.md",
+        "docs/token-estimation.md"
+      ],
       "acceptance_criteria": [
         "AC-1: README tiene quick start + troubleshooting",
         "AC-2: LICENSE MIT presente",
         "AC-3: Doc de política de telemetría explícita sobre no-payloads",
         "GATE: markdownlint pasa"
       ],
-      "references": ["README §1-3"]
+      "references": [
+        "README §1-3"
+      ]
     },
     {
       "id": "TASK-017",
       "title": "Code review",
       "description": "Revisión de código completa buscando anti-patterns, dead code, riesgos de correctness, consistencia de estilo, uso adecuado del SDK MCP.",
-      "status": "pending",
+      "status": "done",
       "layer": 3,
       "complexity": "Low",
-      "depends_on": ["TASK-016"],
+      "depends_on": [
+        "TASK-016"
+      ],
       "files": [],
       "acceptance_criteria": [
         "AC-1: Review ejecutado con meli-code-reviewer sobre todos los archivos de src/",
@@ -309,27 +439,35 @@
       "id": "TASK-018",
       "title": "Performance review",
       "description": "Medir overhead de proxy en invoke (target ≤50ms p95), arranque cold con 5 MCPs (target ≤3s), memoria idle (target ≤150MB). Ajustar cola de telemetría si hay backpressure.",
-      "status": "pending",
+      "status": "done",
       "layer": 3,
       "complexity": "Medium",
-      "depends_on": ["TASK-017"],
-      "files": ["test/perf/*.bench.ts"],
+      "depends_on": [
+        "TASK-017"
+      ],
+      "files": [
+        "test/perf/*.bench.ts"
+      ],
       "acceptance_criteria": [
         "AC-1: Benchmark reproducible con Vitest bench",
         "AC-2: p95 de overhead ≤50ms contra MCP mock",
         "AC-3: Cold start ≤3s con 5 MCPs",
         "GATE: Reporte guardado en 4-implementation/artifacts/perf.md"
       ],
-      "references": ["§9 Performance"]
+      "references": [
+        "§9 Performance"
+      ]
     },
     {
       "id": "TASK-019",
       "title": "Security review",
       "description": "Audit OWASP-style del código: input validation, subprocess isolation (env vars acotadas), file safety (migrate), filtrado de secrets en stderr, validación de tamaño de arguments. Dependabot / npm audit limpio.",
-      "status": "pending",
+      "status": "done",
       "layer": 3,
       "complexity": "Medium",
-      "depends_on": ["TASK-017"],
+      "depends_on": [
+        "TASK-017"
+      ],
       "files": [],
       "acceptance_criteria": [
         "AC-1: npm audit sin vulnerabilidades high/critical",
@@ -337,25 +475,57 @@
         "AC-3: stderr de hijos se filtra contra patrones de secrets conocidos",
         "GATE: Reporte en 4-implementation/artifacts/security.md"
       ],
-      "references": ["§8 Security"]
+      "references": [
+        "§8 Security"
+      ]
     }
   ],
   "dependency_graph": {
     "by_layer": {
       "1": {
-        "level_0": ["TASK-001"],
-        "level_1": ["TASK-002", "TASK-003", "TASK-004", "TASK-005"],
-        "level_2": ["TASK-006", "TASK-008"],
-        "level_3": ["TASK-007", "TASK-009"],
-        "level_4": ["TASK-010"],
-        "level_5": ["TASK-011"],
-        "level_6": ["TASK-012", "TASK-013", "TASK-014"],
-        "level_7": ["TASK-015"],
-        "level_8": ["TASK-016"]
+        "level_0": [
+          "TASK-001"
+        ],
+        "level_1": [
+          "TASK-002",
+          "TASK-003",
+          "TASK-004",
+          "TASK-005"
+        ],
+        "level_2": [
+          "TASK-006",
+          "TASK-008"
+        ],
+        "level_3": [
+          "TASK-007",
+          "TASK-009"
+        ],
+        "level_4": [
+          "TASK-010"
+        ],
+        "level_5": [
+          "TASK-011"
+        ],
+        "level_6": [
+          "TASK-012",
+          "TASK-013",
+          "TASK-014"
+        ],
+        "level_7": [
+          "TASK-015"
+        ],
+        "level_8": [
+          "TASK-016"
+        ]
       },
       "3": {
-        "level_0": ["TASK-017"],
-        "level_1": ["TASK-018", "TASK-019"]
+        "level_0": [
+          "TASK-017"
+        ],
+        "level_1": [
+          "TASK-018",
+          "TASK-019"
+        ]
       }
     }
   }

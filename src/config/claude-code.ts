@@ -1,6 +1,8 @@
-import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, existsSync, readdirSync, lstatSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
+
+const MAX_PLUGIN_WALK_DEPTH = 8;
 import {
   ClaudeConfigSchema,
   McpServerConfigSchema,
@@ -86,7 +88,9 @@ function extractMcps(
 
 function findPluginMcpJsonFiles(dir: string): string[] {
   const results: string[] = [];
-  const walk = (current: string) => {
+  const root = resolve(dir);
+  const walk = (current: string, depth: number) => {
+    if (depth > MAX_PLUGIN_WALK_DEPTH) return;
     if (!existsSync(current)) return;
     let entries: string[];
     try {
@@ -98,18 +102,22 @@ function findPluginMcpJsonFiles(dir: string): string[] {
       const full = join(current, entry);
       let st;
       try {
-        st = statSync(full);
+        st = lstatSync(full);
       } catch {
         continue;
       }
+      // Skip symlinks entirely to prevent path-traversal / loop escapes.
+      if (st.isSymbolicLink()) {
+        continue;
+      }
       if (st.isDirectory()) {
-        walk(full);
+        walk(full, depth + 1);
       } else if (st.isFile() && entry === '.mcp.json') {
         results.push(full);
       }
     }
   };
-  walk(dir);
+  walk(root, 0);
   return results;
 }
 

@@ -2,7 +2,7 @@ import type Database from 'better-sqlite3';
 import type { DiscoveredMcp } from '../config/types.js';
 import type { Catalog } from '../catalog/index.js';
 import { MCPClient, McpClientError } from '../client/mcp-client.js';
-import { BACKOFF_STEPS_MS, MAX_RESTART_ATTEMPTS, nextBackoffMs } from './backoff.js';
+import { BACKOFF_STEPS_MS, nextBackoffMs } from './backoff.js';
 import { countTokens } from '../tokenizer/index.js';
 
 export type McpState = 'running' | 'starting' | 'crashed' | 'excluded';
@@ -34,7 +34,7 @@ export interface SupervisorOptions {
 }
 
 const SECRET_RE = /\b(sk-[A-Za-z0-9_-]{10,}|ghp_[A-Za-z0-9]{20,}|gho_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16})\b/g;
-function scrubSecrets(line: string): string {
+export function scrubSecrets(line: string): string {
   return line.replace(SECRET_RE, '[REDACTED]');
 }
 
@@ -56,9 +56,9 @@ export class Supervisor {
     this.healthCheckTimeoutMs = opts.healthCheckTimeoutMs ?? 10_000;
     this.requestTimeoutMs = opts.requestTimeoutMs ?? 30_000;
     this.logger = opts.logger ?? {
-      info: () => {},
-      warn: (m) => console.error(`[supervisor] ${m}`),
-      error: (m) => console.error(`[supervisor] ${m}`),
+      info: (m) => process.stderr.write(`[toolhub] ${m}\n`),
+      warn: (m) => process.stderr.write(`[toolhub:warn] ${m}\n`),
+      error: (m) => process.stderr.write(`[toolhub:error] ${m}\n`),
     };
     this.backoff = opts.backoffMs ?? BACKOFF_STEPS_MS;
     this.onChildStderr = opts.onChildStderr;
@@ -155,7 +155,7 @@ export class Supervisor {
 
   private scheduleRestart(entry: SupervisorEntry): void {
     const nextDelay = nextBackoffMs(entry.restartCount);
-    if (nextDelay === null || entry.restartCount >= MAX_RESTART_ATTEMPTS) {
+    if (nextDelay === null) {
       entry.state = 'excluded';
       this.catalog.removeByMcp(entry.name);
       this.persistStatus(entry);
