@@ -1,0 +1,199 @@
+{
+  "validator": "meli-validator-runner",
+  "mode": "layer3_quality_gates",
+  "timestamp": "2026-04-18T22:15:00Z",
+  "files_checked": [
+    "src/server/facade.ts",
+    "src/router/index.ts",
+    "src/client/mcp-client.ts",
+    "src/supervisor/index.ts",
+    "src/supervisor/backoff.ts",
+    "src/catalog/index.ts",
+    "src/config/claude-code.ts",
+    "src/telemetry/writer.ts",
+    "src/telemetry/init.ts",
+    "src/tokenizer/index.ts",
+    "src/cli/migrate.ts",
+    "src/cli/init.ts",
+    "src/cli/status.ts",
+    "src/cli/stats.ts",
+    "src/cli/unused.ts",
+    "src/cli/toggle.ts",
+    "bin/toolhub.js",
+    "bin/toolhub-mcp-server.js",
+    "src/index.ts",
+    "src/mcp-server.ts"
+  ],
+  "checks_run": ["build", "tests", "security", "performance", "quality", "code_review"],
+  "results": {
+    "build":       { "status": "passed",  "message": "tsc --noEmit clean (strict + noUnusedLocals + noImplicitAny)" },
+    "tests":       { "status": "passed",  "message": "25/25 tests passed across 9 test files", "coverage": null },
+    "security":    { "status": "failed",  "issues_found": 4 },
+    "performance": { "status": "failed",  "issues_found": 2 },
+    "quality":     { "status": "warning", "issues_found": 3 },
+    "code_review": { "status": "warning", "issues_found": 4 }
+  },
+  "summary": {
+    "critical": 0,
+    "major":    9,
+    "minor":    3,
+    "warnings": 1
+  },
+  "issues": [
+
+    {
+      "id":       "SEC-001",
+      "severity": "major",
+      "category": "security",
+      "file":     "src/server/facade.ts",
+      "line":     83,
+      "rule":     "security/tool-id-regex-enforcement",
+      "message":  "handleGetSchema() does not validate the tool_id against TOOL_ID_RE before passing it to the catalog. The regex guard exists in Router.validateId() and is called by Router.invoke(), but the get_schema path bypasses the Router and calls the catalog directly. An LLM or fuzz client can pass an arbitrary string (including e.g. '../../../etc/passwd' patterns or very long strings) to get_schema with no format enforcement.",
+      "code_snippet": "case 'get_schema':\n  return this.handleGetSchema((args?.name as string) ?? '');"
+    },
+
+    {
+      "id":       "SEC-002",
+      "severity": "major",
+      "category": "security",
+      "file":     "src/client/mcp-client.ts",
+      "line":     74,
+      "rule":     "security/subprocess-env-inherit",
+      "message":  "When opts.env is undefined, StdioClientTransport merges getDefaultEnvironment() (HOME, LOGNAME, PATH, SHELL, TERM, USER) with a null/undefined opts.env, which is fine. But when the caller passes an explicit env map (as Supervisor always does), the SDK merges getDefaultEnvironment() + opts.env via spread. The caller has no mechanism to suppress PATH inheritance. Spec §8 requires 'env vars explicitly passed (no inherit-all)'. The current design satisfies 'no inherit-all' but the caller cannot opt out of the SDK default set (HOME, PATH, etc.) — this is an implicit inherit that is opaque to the caller and not documented.",
+      "code_snippet": "env: this.opts.env,  // SDK merges getDefaultEnvironment() + this"
+    },
+
+    {
+      "id":       "SEC-003",
+      "severity": "major",
+      "category": "security",
+      "file":     "src/supervisor/index.ts",
+      "line":     104,
+      "rule":     "security/stderr-scrub-only-when-sink-provided",
+      "message":  "scrubSecrets() is applied and onChildStderr is called only when opts.onChildStderr is provided (line 106: this.onChildStderr?.(entry.name, clean)). In the production bootstrap path (src/index.ts), onChildStderr is NOT passed to Supervisor, so child stderr is silently discarded rather than written to any log file. Spec §8 says stderr of children must be 'captured to log file, filter regex for sk-*, ghp_*'. Today the filter runs but the filtered output is thrown away.",
+      "code_snippet": "this.onChildStderr?.(entry.name, clean); // no-op in production"
+    },
+
+    {
+      "id":       "SEC-004",
+      "severity": "major",
+      "category": "security",
+      "file":     "src/config/claude-code.ts",
+      "line":     105,
+      "rule":     "security/path-traversal-symlink",
+      "message":  "findPluginMcpJsonFiles() uses statSync (follows symlinks) to decide whether a filesystem entry is a directory or file. An attacker who can place a symlink inside ~/.claude/plugins/ pointing outside the plugins directory can cause the recursive walk to escape the intended subtree. The walk has no max-depth guard and no symlink detection (should use lstat instead of statSync for the isDirectory check).",
+      "code_snippet": "st = statSync(full);\nif (st.isDirectory()) { walk(full); }"
+    },
+
+    {
+      "id":       "PERF-001",
+      "severity": "major",
+      "category": "performance",
+      "file":     "src/client/mcp-client.ts",
+      "line":     88,
+      "rule":     "performance/unbounded-buffer",
+      "message":  "The stderr line-buffer `buf` in connect() is unbounded. If a child process produces stderr output that contains no newline (e.g. a binary blob or a very long log line), buf accumulates indefinitely for the lifetime of the connection. With multiple MCPs this can compound. There is no max-buf-size guard nor a flush-on-close path (the 'data' listener is never removed and buf is never flushed on stream close).",
+      "code_snippet": "buf += chunk.toString('utf8'); // no size cap"
+    },
+
+    {
+      "id":       "PERF-002",
+      "severity": "major",
+      "category": "performance",
+      "file":     "src/telemetry/writer.ts",
+      "line":     66,
+      "rule":     "performance/telemetry-not-truly-async",
+      "message":  "flush() is labelled as 'write all queued items synchronously' and is called directly by the setInterval callback on the main event loop. better-sqlite3 is synchronous — each flush() call blocks the Node.js thread for the duration of the SQLite transaction. Under high invocation rates (burst > 1000 records at 100ms intervals) this can exceed the 50ms p95 overhead budget for invoke. The spec target is 'telemetry must not block response path': while enqueue() is non-blocking, the flush timer shares the event loop with incoming invoke requests.",
+      "code_snippet": "this.timer = setInterval(() => this.flush(), this.flushIntervalMs);"
+    },
+
+    {
+      "id":       "CR-001",
+      "severity": "major",
+      "category": "code_review",
+      "file":     "src/cli/migrate.ts",
+      "line":     60,
+      "rule":     "code-review/atomic-write-cross-device",
+      "message":  "atomicWrite() constructs the temp file path as `${path}.toolhub-tmp-...`, meaning the temp file is placed in the same directory as the target. If the target file resides on a different filesystem or mount point than the OS temp dir this is fine, but if path is on a separate volume from where Node writes, renameSync() will throw EXDEV. More critically, doRevert() first calls unlinkSync(path) then atomicWrite(path, content). There is a non-atomic window between unlink and the rename in which the file does not exist. A crash or SIGKILL in that window leaves the user with no claude.json. A true atomic revert should atomicWrite to the final path without the pre-unlink.",
+      "code_snippet": "if (existsSync(path)) unlinkSync(path);\natomicWrite(path, content); // gap here"
+    },
+
+    {
+      "id":       "CR-002",
+      "severity": "major",
+      "category": "code_review",
+      "file":     "src/cli/migrate.ts",
+      "line":     33,
+      "rule":     "code-review/migrate-overwrites-existing-mcpservers",
+      "message":  "buildMigrated() replaces the entire mcpServers key with a singleton {toolhub: ...}, silently discarding any existing MCP server entries the user had. The dry-run diff shows this to the user, but --apply does it unconditionally with no confirmation prompt. The spec requires atomic write + backup (done), but there is no guard preventing data loss if the user runs --apply twice or if other MCPs were already configured.",
+      "code_snippet": "next.mcpServers = { toolhub: { ...TOOLHUB_MCP_SNIPPET } }; // drops all existing"
+    },
+
+    {
+      "id":       "CR-003",
+      "severity": "major",
+      "category": "code_review",
+      "file":     "src/supervisor/index.ts",
+      "line":     156,
+      "rule":     "code-review/backoff-dual-gate-inconsistency",
+      "message":  "scheduleRestart() checks both nextBackoffMs(entry.restartCount) === null AND entry.restartCount >= MAX_RESTART_ATTEMPTS before excluding. nextBackoffMs returns null when attempt >= BACKOFF_STEPS_MS.length, which is exactly MAX_RESTART_ATTEMPTS. Both conditions are equivalent — the nextDelay === null branch is dead code given the current values. The conditions are confusingly redundant; if BACKOFF_STEPS_MS and MAX_RESTART_ATTEMPTS drift (e.g. tests override backoffMs), the gate logic can diverge silently.",
+      "code_snippet": "if (nextDelay === null || entry.restartCount >= MAX_RESTART_ATTEMPTS) {"
+    },
+
+    {
+      "id":       "CR-004",
+      "severity": "minor",
+      "category": "code_review",
+      "file":     "src/supervisor/index.ts",
+      "line":     59,
+      "rule":     "code-review/default-logger-info-silent",
+      "message":  "The default logger silently drops info-level messages (info: () => {}). In the production mcp-server path (src/index.ts), no logger is provided, so all info-level Supervisor messages ('MCP started', 'Scheduling restart') are silently discarded. This means there is no observable startup trace in production runs. Warn and error go to stderr, but info is lost.",
+      "code_snippet": "info: () => {}, // production default silences startup/restart traces"
+    },
+
+    {
+      "id":       "CR-005",
+      "severity": "minor",
+      "category": "code_review",
+      "file":     "src/telemetry/init.ts",
+      "line":     21,
+      "rule":     "code-review/schema-path-resolution-fragile",
+      "message":  "loadSchemaSql() probes three hard-coded relative candidate paths to find schema.sql. If the package layout changes (e.g. monorepo nesting, bundler output to a different depth), all three candidates will miss and the process throws at startup with an opaque error. Using import.meta.resolve() or embedding the SQL as a TS string constant would be more robust.",
+      "code_snippet": "join(here, '..', '..', 'src', 'telemetry', 'schema.sql'), // fragile depth"
+    },
+
+    {
+      "id":       "QUAL-001",
+      "severity": "minor",
+      "category": "quality",
+      "file":     "src/stats.ts",
+      "line":     16,
+      "rule":     "quality/percentile-off-by-one",
+      "message":  "The percentile() function uses Math.floor((p/100) * sorted.length) as the index. For a 100-element array, p=95 gives index 95, which is the 96th element — correct for nearest-rank method. However for small sample sizes (e.g. N=1) it always returns index 0 regardless of p, which means p95 == p50 == p99 when there is only one sample. This is documented nowhere and may mislead users checking the ≤50ms target.",
+      "code_snippet": "const idx = Math.min(sorted.length - 1, Math.floor((p / 100) * sorted.length));"
+    },
+
+    {
+      "id":       "QUAL-002",
+      "severity": "warning",
+      "category": "quality",
+      "file":     "src/server/facade.ts",
+      "line":     74,
+      "rule":     "quality/type-assertion-on-unvalidated-input",
+      "message":  "The CallToolRequestSchema handler casts req.params with a local type assertion `as { name: string; arguments?: Record<string, unknown> }` rather than using Zod or the SDK's validated type. If the SDK schema changes or allows a null name, the cast silently succeeds and downstream code receives unexpected types. This is also where both the tool name and arguments arrive before any validation.",
+      "code_snippet": "const { name, arguments: args } = req.params as {\n  name: string;\n  arguments?: Record<string, unknown>;\n};"
+    },
+
+    {
+      "id":       "QUAL-003",
+      "severity": "warning",
+      "category": "quality",
+      "file":     "src/tokenizer/index.ts",
+      "line":     6,
+      "rule":     "quality/module-level-mutable-singleton",
+      "message":  "The encoder singleton is a mutable module-level variable (`let encoder: Encoder | null = null`). In test environments with module reuse across test files, the singleton may persist between test cases. More importantly, js-tiktoken encoders hold a WASM-backed typed array and do not expose a `free()` or `close()` method, making it impossible to release the memory on shutdown. No cleanup is called during bootstrap().shutdown().",
+      "code_snippet": "let encoder: Encoder | null = null; // never freed"
+    }
+  ],
+  "verdict": "CANNOT_PROCEED"
+}

@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "github": {
+      "command": "node",
+      "args": ["github-mcp.js"],
+      "env": {
+        "GITHUB_TOKEN": "${GITHUB_TOKEN}"
+      }
+    },
+    "fs": {
+      "command": "node",
+      "args": ["fs-mcp.js", "--root", "${HOME}"]
+    },
+    "disabled-one": {
+      "command": "node",
+      "args": ["x.js"],
+      "disabled": true
+    },
+    "bad": "not-an-object"
+  }
+}
