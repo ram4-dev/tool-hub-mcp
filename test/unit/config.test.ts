@@ -15,6 +15,7 @@ describe('ConfigReader', () => {
     const mcps = readClaudeCodeConfig({
       claudeJsonPath: fixture,
       pluginsDir: '/nonexistent-toolhub-plugins',
+      manifestPath: '/nonexistent-toolhub-manifest.json',
       onWarn: (m) => warnings.push(m),
     });
     // Expect: github + fs (disabled-one filtered, "bad" invalid => warning)
@@ -64,6 +65,7 @@ describe('ConfigReader', () => {
       const mcps = readClaudeCodeConfig({
         claudeJsonPath: '/nonexistent-toolhub.json',
         pluginsDir,
+        manifestPath: '/nonexistent-toolhub-manifest.json',
         onWarn: (m) => warnings.push(m),
       });
       // The symlink-escaped .mcp.json must NOT have been followed.

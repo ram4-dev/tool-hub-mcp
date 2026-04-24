@@ -71,12 +71,13 @@ export function buildCli(): Command {
 
   program
     .option('--mcp-server', 'run as MCP server (used by Claude Code). Equivalent to toolhub-mcp-server.')
-    .hook('preAction', async (thisCommand) => {
-      if (thisCommand.opts().mcpServer) {
+    .action(async (opts) => {
+      if (opts.mcpServer) {
         const { runMcpServer } = await import('../mcp-server.js');
         await runMcpServer();
-        process.exit(0);
+        return;
       }
+      program.help();
     });
 
   return program;

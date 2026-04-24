@@ -86,97 +86,112 @@ describe('attachBoundedStderr (PERF-001)', () => {
   });
 });
 
-describe('IsolatedStdioTransport env policy (SEC-002)', () => {
-  it('does NOT leak HOME/SHELL/USER/LOGNAME/TERM to the child by default', async () => {
-    // Guard: ensure the parent actually has at least one of these set so the assertion is meaningful.
-    const parentHasSome =
-      'HOME' in process.env || 'SHELL' in process.env || 'USER' in process.env;
-    expect(parentHasSome).toBe(true);
+describe('IsolatedStdioTransport env policy', () => {
+  it('preservePath=true (default) inherits parent env and layers caller overrides on top', async () => {
+    const LEAK_KEY = 'TOOLHUB_ENV_PROBE';
+    process.env[LEAK_KEY] = 'from-parent';
+    try {
+      const transport = new IsolatedStdioTransport({
+        command: process.execPath,
+        args: [
+          '-e',
+          'process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:0,result:{env:process.env}}) + "\\n");',
+        ],
+        env: { TOOLHUB_MARKER: 'yes' },
+        preservePath: true,
+        pipeStderr: false,
+      });
 
-    // Spawn a tiny node script that prints JSON.stringify(process.env) and exits.
-    // We bypass MCPClient here because the child isn't a real MCP server — we just want
-    // to inspect its environment.
-    const script = 'process.stdout.write(JSON.stringify(process.env)); process.exit(0);';
+      const received: unknown[] = [];
+      transport.onmessage = (m) => received.push(m);
 
-    const childEnv: Record<string, string> = { ...process.env } as Record<string, string>;
-    // simulate what IsolatedStdioTransport does: explicit env = callerEnv + PATH
-    const isolatedEnv: Record<string, string> = { FOO_TOOLHUB_TEST: '1' };
-    if (process.env.PATH) isolatedEnv.PATH = process.env.PATH;
+      await transport.start();
+      await new Promise((r) => setTimeout(r, 200));
+      await transport.close();
 
-    // Use the exact spawn options IsolatedStdioTransport uses.
-    const proc = spawn(process.execPath, ['-e', script], {
-      env: isolatedEnv,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      shell: false,
-    });
+      const msg = received.find(
+        (m): m is { result: { env: Record<string, string> } } =>
+          typeof m === 'object' && m !== null && 'result' in (m as Record<string, unknown>),
+      );
+      expect(msg).toBeDefined();
+      const env = msg!.result.env;
 
-    let out = '';
-    proc.stdout.on('data', (c: Buffer) => {
-      out += c.toString('utf8');
-    });
-
-    const exitCode: number | null = await new Promise((resolve) => {
-      proc.on('close', (code) => resolve(code));
-    });
-
-    expect(exitCode).toBe(0);
-    const childEnvObserved = JSON.parse(out) as Record<string, string>;
-
-    expect(childEnvObserved.HOME).toBeUndefined();
-    expect(childEnvObserved.SHELL).toBeUndefined();
-    expect(childEnvObserved.USER).toBeUndefined();
-    expect(childEnvObserved.LOGNAME).toBeUndefined();
-    expect(childEnvObserved.TERM).toBeUndefined();
-
-    // Caller-provided var is present
-    expect(childEnvObserved.FOO_TOOLHUB_TEST).toBe('1');
-
-    // silence unused
-    void childEnv;
+      expect(env.TOOLHUB_MARKER).toBe('yes');
+      expect(env.PATH).toBeDefined();
+      // Full parent env is inherited by default (real-world MCPs need proxy/auth vars from parent).
+      expect(env[LEAK_KEY]).toBe('from-parent');
+    } finally {
+      delete process.env[LEAK_KEY];
+    }
   });
 
-  it('IsolatedStdioTransport spawns with explicit env only (integration)', async () => {
-    // Spawn node via the transport; child prints its env as a single JSON-RPC-like line we can read from stdout.
-    // We don't use the SDK Client here — just start() the transport and listen to onmessage via the raw stream.
-    // Simplest: spawn and read stdout directly on the underlying process by reusing the spawn contract.
-    const transport = new IsolatedStdioTransport({
-      command: process.execPath,
-      args: [
-        '-e',
-        // Print env as NDJSON so the transport's parser can optionally pick it up, but we
-        // just want to verify the spawn succeeds under isolated env.
-        'process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:0,result:{env:process.env}}) + "\\n");',
-      ],
-      env: { TOOLHUB_MARKER: 'yes' },
-      preservePath: true,
-      pipeStderr: false,
-    });
+  it('caller-provided env overrides same-key parent env', async () => {
+    const KEY = 'TOOLHUB_OVERRIDE_PROBE';
+    process.env[KEY] = 'parent-value';
+    try {
+      const transport = new IsolatedStdioTransport({
+        command: process.execPath,
+        args: [
+          '-e',
+          'process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:0,result:{env:process.env}}) + "\\n");',
+        ],
+        env: { [KEY]: 'caller-value' },
+        preservePath: true,
+        pipeStderr: false,
+      });
 
-    const received: unknown[] = [];
-    transport.onmessage = (m) => received.push(m);
+      const received: unknown[] = [];
+      transport.onmessage = (m) => received.push(m);
 
-    await transport.start();
+      await transport.start();
+      await new Promise((r) => setTimeout(r, 200));
+      await transport.close();
 
-    // Wait for the child to write and exit.
-    await new Promise((r) => setTimeout(r, 200));
+      const msg = received.find(
+        (m): m is { result: { env: Record<string, string> } } =>
+          typeof m === 'object' && m !== null && 'result' in (m as Record<string, unknown>),
+      );
+      expect(msg!.result.env[KEY]).toBe('caller-value');
+    } finally {
+      delete process.env[KEY];
+    }
+  });
 
-    await transport.close();
+  it('preservePath=false yields strict env (only safe allowlist + caller vars)', async () => {
+    const LEAK_KEY = 'TOOLHUB_STRICT_PROBE';
+    process.env[LEAK_KEY] = 'must-not-leak';
+    try {
+      const transport = new IsolatedStdioTransport({
+        command: process.execPath,
+        args: [
+          '-e',
+          'process.stdout.write(JSON.stringify({jsonrpc:"2.0",id:0,result:{env:process.env}}) + "\\n");',
+        ],
+        env: { ONLY_THIS: '1' },
+        preservePath: false,
+        pipeStderr: false,
+      });
 
-    // Find the one result message.
-    const msg = received.find(
-      (m): m is { result: { env: Record<string, string> } } =>
-        typeof m === 'object' && m !== null && 'result' in (m as Record<string, unknown>),
-    );
-    expect(msg).toBeDefined();
-    const env = msg!.result.env;
+      const received: unknown[] = [];
+      transport.onmessage = (m) => received.push(m);
 
-    expect(env.HOME).toBeUndefined();
-    expect(env.SHELL).toBeUndefined();
-    expect(env.USER).toBeUndefined();
-    expect(env.LOGNAME).toBeUndefined();
-    expect(env.TERM).toBeUndefined();
-    expect(env.TOOLHUB_MARKER).toBe('yes');
-    // PATH preserved by default
-    expect(env.PATH).toBeDefined();
+      await transport.start();
+      await new Promise((r) => setTimeout(r, 200));
+      await transport.close();
+
+      const msg = received.find(
+        (m): m is { result: { env: Record<string, string> } } =>
+          typeof m === 'object' && m !== null && 'result' in (m as Record<string, unknown>),
+      );
+      expect(msg).toBeDefined();
+      const env = msg!.result.env;
+      expect(env.ONLY_THIS).toBe('1');
+      // Non-allowlisted parent var must not leak in strict mode
+      expect(env[LEAK_KEY]).toBeUndefined();
+      // But safe allowlist IS present when parent has them
+      if (process.env.PATH) expect(env.PATH).toBeDefined();
+    } finally {
+      delete process.env[LEAK_KEY];
+    }
   });
 });

@@ -121,15 +121,37 @@ function findPluginMcpJsonFiles(dir: string): string[] {
   return results;
 }
 
+function defaultManifestPath(): string {
+  return join(homedir(), '.toolhub', 'migrated-mcps.json');
+}
+
+function extractManifestMcps(
+  raw: unknown,
+  source: string,
+  onWarn: (m: string) => void,
+): DiscoveredMcp[] {
+  if (!raw || typeof raw !== 'object') return [];
+  const original = (raw as { original?: unknown }).original;
+  if (!original || typeof original !== 'object') return [];
+  return extractMcps({ mcpServers: original }, source, onWarn);
+}
+
 /**
- * Reads ~/.claude.json and any ~/.claude/plugins/ ** /.mcp.json files,
+ * Reads ~/.claude.json, the toolhub manifest of pre-migration MCPs
+ * (~/.toolhub/migrated-mcps.json), and any ~/.claude/plugins/ ** /.mcp.json files,
  * returns a de-duplicated list of MCP servers with env vars expanded.
+ *
+ * After `toolhub migrate --apply`, ~/.claude.json contains only the `toolhub`
+ * entry (visible to Claude Code), while the real children live in the manifest.
+ * We explicitly skip the `toolhub` entry itself to avoid proxying ourselves.
+ *
  * Reads only — never writes. Invalid entries are dropped with a warning.
  */
-export function readClaudeCodeConfig(opts: ReadConfigOptions = {}): DiscoveredMcp[] {
+export function readClaudeCodeConfig(opts: ReadConfigOptions & { manifestPath?: string } = {}): DiscoveredMcp[] {
   const onWarn = opts.onWarn ?? (() => {});
   const claudeJsonPath = opts.claudeJsonPath ?? defaultClaudeJsonPath();
   const pluginsDir = opts.pluginsDir ?? defaultPluginsDir();
+  const manifestPath = opts.manifestPath ?? defaultManifestPath();
 
   const seen = new Map<string, DiscoveredMcp>();
 
@@ -137,7 +159,18 @@ export function readClaudeCodeConfig(opts: ReadConfigOptions = {}): DiscoveredMc
     const raw = readJsonSafe(claudeJsonPath, onWarn);
     if (raw) {
       for (const mcp of extractMcps(raw, claudeJsonPath, onWarn)) {
+        if (mcp.name === 'toolhub') continue;
         seen.set(mcp.name, mcp);
+      }
+    }
+  }
+
+  if (existsSync(manifestPath)) {
+    const raw = readJsonSafe(manifestPath, onWarn);
+    if (raw) {
+      for (const mcp of extractManifestMcps(raw, manifestPath, onWarn)) {
+        if (mcp.name === 'toolhub') continue;
+        if (!seen.has(mcp.name)) seen.set(mcp.name, mcp);
       }
     }
   }
@@ -146,6 +179,7 @@ export function readClaudeCodeConfig(opts: ReadConfigOptions = {}): DiscoveredMc
     const raw = readJsonSafe(pluginFile, onWarn);
     if (raw) {
       for (const mcp of extractMcps(raw, pluginFile, onWarn)) {
+        if (mcp.name === 'toolhub') continue;
         if (!seen.has(mcp.name)) seen.set(mcp.name, mcp);
       }
     }

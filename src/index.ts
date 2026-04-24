@@ -29,6 +29,13 @@ export interface BootstrapOptions {
   inMemoryDb?: boolean;
   /** Override log directory (primarily for tests). */
   logDir?: string;
+  /**
+   * If true, do NOT await supervisor.startAll() inside bootstrap — caller is responsible
+   * for invoking it after connecting stdio. This matters in MCP-server mode where the
+   * client (Claude Code) will time out the initialize handshake if bootstrap blocks on
+   * 40+ child spawns for up to 30s each. Default false (test/CLI paths are unchanged).
+   */
+  deferChildStart?: boolean;
 }
 
 const LOG_ROTATE_BYTES = 10 * 1024 * 1024; // 10 MB
@@ -104,7 +111,9 @@ export async function bootstrap(opts: BootstrapOptions = {}): Promise<ToolhubRun
       rotated.bytes += Buffer.byteLength(payload);
     },
   });
-  await supervisor.startAll();
+  if (!opts.deferChildStart) {
+    await supervisor.startAll();
+  }
 
   const router = new Router({ catalog, supervisor, telemetry });
   const facade = new ServerFacade(router);

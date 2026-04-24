@@ -21,9 +21,12 @@ export interface McpClientOptions {
   /** Stderr sink (optional). Default: pipe to parent stderr, line-filtered. */
   onStderr?: (line: string) => void;
   /**
-   * If true (default), PATH from the parent is forwarded to the child so it can locate binaries.
-   * This is the only implicit variable: no HOME/SHELL/USER/LOGNAME/TERM/etc. inheritance.
-   * Set to false for strict isolation (caller must then provide PATH in env if needed).
+   * If true (default), the full parent env is inherited by the child (matching the behavior
+   * of Claude Code / SDK's StdioClientTransport). Real-world MCPs (mcp-remote-proxy, uvx,
+   * Zero-Trust-authed services) depend on this to find auth cookies, proxy configs, etc.
+   *
+   * If false, only a small non-secret allowlist (PATH/HOME/USER/…/LANG) is forwarded.
+   * Opt-in for stricter deployments; in either mode, `env` overrides take precedence.
    */
   preservePath?: boolean;
 }
@@ -32,6 +35,27 @@ const DEFAULT_TIMEOUT = 30_000;
 const STDERR_MAX_BYTES = 64 * 1024;
 const STDERR_TRUNCATE_TO_BYTES = 32 * 1024;
 const STDERR_TRUNCATED_WARN = '[stderr truncated: exceeded 64KB]';
+
+/**
+ * Non-secret environment variables standard shell programs expect.
+ * Forwarded to children by default so MCPs can find ~/.cache, ~/.config, tmp dirs, etc.
+ * Secrets (API keys, tokens) are NEVER forwarded unless explicitly in opts.env.
+ */
+const SAFE_DEFAULT_ENV_KEYS = [
+  'PATH',
+  'HOME',
+  'USER',
+  'LOGNAME',
+  'SHELL',
+  'TERM',
+  'TMPDIR',
+  'LANG',
+  'LC_ALL',
+  'LC_CTYPE',
+  ...(process.platform === 'win32'
+    ? ['APPDATA', 'LOCALAPPDATA', 'USERPROFILE', 'SYSTEMROOT', 'PROGRAMFILES', 'PROGRAMDATA', 'TEMP', 'TMP']
+    : []),
+] as const;
 
 export class McpClientError extends Error {
   public readonly kind: 'timeout' | 'mcp_error' | 'not_found';
@@ -61,12 +85,9 @@ function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
 }
 
 /**
- * IsolatedStdioTransport — a minimal MCP stdio transport that does NOT inherit the caller's
- * environment by default (unlike the SDK's StdioClientTransport which always merges
- * getDefaultEnvironment(): HOME/PATH/SHELL/USER/LOGNAME/TERM).
- *
- * Env policy: the child sees exactly `{ ...callerEnv, ...(preservePath ? { PATH } : {}) }`.
- * PATH is preserved by default because otherwise bare command names (e.g. "npx") fail to resolve.
+ * IsolatedStdioTransport — a minimal MCP stdio transport built on explicit spawn so toolhub
+ * can pipe stderr into its own log sink and control lifecycle precisely. See McpClientOptions
+ * for env-inheritance policy (preservePath default=true → full parent env; false → safe allowlist).
  *
  * Framing: newline-delimited JSON per MCP stdio spec.
  */
@@ -101,11 +122,29 @@ export class IsolatedStdioTransport implements Transport {
     if (this._process) {
       throw new Error('IsolatedStdioTransport already started');
     }
-    // Explicit env: no getDefaultEnvironment(); PATH is the single implicit var (if preservePath).
+    // Env policy:
+    //   preservePath=true  (default) → inherit full parent env + caller overrides.
+    //     This matches how Claude Code launches MCPs today; real-world MCPs (mcp-remote-proxy,
+    //     uvx, Zero-Trust-gated services) depend on HOME/SHELL/proxy vars/auth cookies found in
+    //     files referenced by arbitrary env. Narrower defaults broke most children in practice.
+    //   preservePath=false → strict: only SAFE_DEFAULT_ENV_KEYS + caller overrides.
+    //     Opt-in for stricter deployments that audit exactly what secrets each child sees.
+    //
+    // In both modes, caller-provided `env` takes precedence over parent env for the same key.
     const preservePath = this.params.preservePath ?? true;
-    const env: Record<string, string> = { ...(this.params.env ?? {}) };
-    if (preservePath && process.env.PATH !== undefined && env.PATH === undefined) {
-      env.PATH = process.env.PATH;
+    const env: Record<string, string> = {};
+    if (preservePath) {
+      for (const [k, v] of Object.entries(process.env)) {
+        if (v !== undefined) env[k] = v;
+      }
+    } else {
+      for (const key of SAFE_DEFAULT_ENV_KEYS) {
+        const v = process.env[key];
+        if (v !== undefined) env[key] = v;
+      }
+    }
+    for (const [k, v] of Object.entries(this.params.env ?? {})) {
+      env[k] = v;
     }
 
     return new Promise((resolve, reject) => {
